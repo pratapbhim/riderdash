@@ -45,8 +45,9 @@ export default function Page() {
   // 🔧 FIXED: Single search function
   const runSearch = useCallback(async (searchValue: string) => {
     console.log("Running search for:", searchValue);
-    
+
     if (!searchValue.trim()) {
+      console.log("Search value is empty. Resetting state.");
       setShowDefault(true);
       setHasSearched(false);
       setRiders([]);
@@ -59,74 +60,66 @@ export default function Page() {
     setHasSearched(true);
     setError(null);
     setRiders([]);
-    
+
     let spinnerTimeout: NodeJS.Timeout | null = null;
     spinnerTimeout = setTimeout(() => {
       setLoading(true);
     }, 300);
 
     try {
-
+      console.log("Preparing Supabase query...");
       let query = supabase.from("riders").select("*");
-      // Rider ID: starts with GMR, rest can be any digits/letters
-      // Phone: 10 digits, 91+10 digits, or +91+10 digits
+      console.log("Query prepared:", query);
+
       const isRiderId = /^GMR(\d+)$/i.test(searchValue);
       const isNumericId = /^\d+$/.test(searchValue);
       const isPhone = /^\d{10}$/.test(searchValue);
       const isPhoneWith91 = /^(\+91|91)\d{10}$/.test(searchValue);
 
+      console.log("Search type:", { isRiderId, isNumericId, isPhone, isPhoneWith91 });
+
       if (isRiderId) {
-        // Extract numeric part for id
         const idNum = searchValue.replace(/^GMR/i, "");
-        if (/^\d+$/.test(idNum)) {
-          query = query.eq('id', Number(idNum));
-        } else {
-          query = query.eq('id', -1); // unlikely to match
-        }
+        console.log("Searching by Rider ID:", idNum);
+        query = query.eq("id", idNum);
+      } else if (isPhone || isPhoneWith91) {
+        const phone = searchValue.replace(/^(\+91|91)/, "");
+        console.log("Searching by Phone:", phone);
+        query = query.eq("phone", phone);
       } else if (isNumericId) {
-        // Direct numeric id search
-        query = query.eq('id', Number(searchValue));
-      } else if (isPhone) {
-        // Exact match for 10-digit mobile
-        query = query.eq('mobile', searchValue);
-      } else if (isPhoneWith91) {
-        // Remove +91 or 91 prefix and exact match
-        let phone = searchValue.replace(/^\+?91/, "");
-        query = query.eq('mobile', phone);
+        console.log("Searching by Numeric ID:", searchValue);
+        query = query.eq("id", searchValue);
       } else {
-        // fallback: search mobile as ilike (id is integer, so skip ilike for id)
-        query = query.ilike('mobile', `%${searchValue}%`);
-      }
-
-      const { data, error: supabaseError } = await query;
-      console.log('Supabase result:', data, 'Supabase error:', supabaseError);
-
-      if (supabaseError && supabaseError.message && supabaseError.message.includes('out of range')) {
+        console.log("Invalid search input. Resetting state.");
+        setError("Invalid search input. Please enter a valid Rider ID or Phone number.");
         setRiders([]);
-        setError(null);
+        setLoading(false);
         return;
       }
-      if (supabaseError) {
-        setError(null);
+
+      const { data, error } = await query;
+      console.log("Query result:", { data, error });
+
+      if (error) {
+        console.error("Supabase query error:", error);
+        setError("An error occurred while fetching data.");
         setRiders([]);
         return;
       }
 
       if (data && data.length > 0) {
+        console.log("Riders found:", data);
         setRiders(data as Rider[]);
         setError(null);
       } else {
+        console.log("No riders found.");
         setRiders([]);
-        setError(null);
+        setError("No riders found.");
       }
     } catch (err: any) {
-      if (err && err.message && err.message.includes('out of range')) {
-        setRiders([]);
-        setError(null);
-        return;
-      }
+      console.error("Unexpected error:", err);
       setRiders([]);
-      setError(null);
+      setError("An unexpected error occurred.");
     } finally {
       if (spinnerTimeout) clearTimeout(spinnerTimeout);
       setLoading(false);
